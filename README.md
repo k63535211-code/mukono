@@ -19,7 +19,7 @@ OrgMonitor is an authorized IT infrastructure monitoring MVP for organizations t
 - Configurable TCP/HTTP/HTTPS network probes
 - Network target management for routers, switches, servers, access points, and controllers
 - Alert history, acknowledgement, and SQLite-backed status transitions
-- Responsive operations dashboard with overview, inventory, network, and alerts views
+- Responsive operations dashboard with overview, inventory, network, and alerts view
 - CSV inventory export
 - CORS configuration for the Vite development server
 
