@@ -95,6 +95,58 @@ public static class RequestValidation
         return null;
     }
 
+    /// <summary>Validation for manually adding a device that has no reporting agent.</summary>
+    public static string? ValidateDevice(
+        string? name,
+        string? hostname,
+        string? address,
+        DeviceKind kind,
+        string? operatingSystem,
+        string? tags)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 120)
+        {
+            return "A display name of at most 120 characters is required.";
+        }
+
+        if (hostname is not null && hostname.Trim().Length > 120)
+        {
+            return "hostname must be 120 characters or fewer.";
+        }
+
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return "Address is required.";
+        }
+
+        if (address.Trim().Length > 120)
+        {
+            return "address must be 120 characters or fewer.";
+        }
+
+        if (ValidateHost(address.Trim()) is { } hostError)
+        {
+            return hostError;
+        }
+
+        if (!Enum.IsDefined(typeof(DeviceKind), kind))
+        {
+            return "kind is not a supported device type.";
+        }
+
+        if (operatingSystem is { Length: > 120 })
+        {
+            return "operatingSystem must be 120 characters or fewer.";
+        }
+
+        if (tags is { Length: > 500 })
+        {
+            return "tags must be 500 characters or fewer.";
+        }
+
+        return null;
+    }
+
     public static string? ValidateHost(string address)
     {
         if (address.Contains("://", StringComparison.Ordinal))

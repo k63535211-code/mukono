@@ -179,6 +179,36 @@ public static class ApiEndpoints
             return Results.Ok(store.GetDevices());
         });
 
+        // Manually tracked device (no agent): created, edited, and removed by an operator.
+        app.MapPost("/api/devices", (HttpContext context, CreateDeviceRequest? request) =>
+        {
+            if (access.Require(context, UserRole.@operator) is { } denied)
+            {
+                return denied;
+            }
+
+            if (request is null)
+            {
+                return Results.BadRequest(new { error = "A device body is required." });
+            }
+
+            if (RequestValidation.ValidateDevice(
+                    request.Name,
+                    request.Hostname,
+                    request.Address,
+                    request.Kind,
+                    request.OperatingSystem,
+                    request.Tags) is { } error)
+            {
+                return Results.BadRequest(new { error });
+            }
+
+            var device = store.CreateDevice(request);
+            Audit(context, "device.created", "device", device.Id.ToString(), $"Added device {device.Name}");
+            events.Publish("device.created", device.Id);
+            return Results.Created($"/api/devices/{device.Id}", device);
+        });
+
         app.MapGet("/api/devices/{id:guid}", (HttpContext context, Guid id) =>
         {
             if (access.Require(context, UserRole.viewer) is { } denied)
@@ -222,6 +252,29 @@ public static class ApiEndpoints
             if (request.Name is not null && (request.Name.Trim().Length == 0 || request.Name.Trim().Length > 120))
             {
                 return Results.BadRequest(new { error = "name must be between 1 and 120 characters." });
+            }
+
+            if (request.Hostname is { } hostname && hostname.Trim().Length > 120)
+            {
+                return Results.BadRequest(new { error = "hostname must be 120 characters or fewer." });
+            }
+
+            if (request.OperatingSystem is { Length: > 120 })
+            {
+                return Results.BadRequest(new { error = "operatingSystem must be 120 characters or fewer." });
+            }
+
+            if (request.Address is { } address && !string.IsNullOrWhiteSpace(address))
+            {
+                if (address.Trim().Length > 120)
+                {
+                    return Results.BadRequest(new { error = "address must be 120 characters or fewer." });
+                }
+
+                if (RequestValidation.ValidateHost(address) is { } hostError)
+                {
+                    return Results.BadRequest(new { error = hostError });
+                }
             }
 
             if (request.Tags is { Length: > 500 })

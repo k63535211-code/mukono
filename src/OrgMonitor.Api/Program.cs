@@ -5,11 +5,17 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using OrgMonitor.Api.Configuration;
 using OrgMonitor.Api.Endpoints;
 using OrgMonitor.Api.Models;
 using OrgMonitor.Api.Services;
 using OrgMonitor.Api.Services.Email;
 using OrgMonitor.Api.Services.Events;
+
+// Secrets live in the gitignored .env at the repository root. Load them before the
+// configuration is built so they take part in normal config resolution, and never
+// overwrite variables that are already set in the process environment.
+var envFile = DotEnv.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +48,11 @@ builder.Services.AddHostedService(provider => provider.GetRequiredService<Notifi
 builder.Services.AddHostedService<MonitoringWorker>();
 
 var app = builder.Build();
+
+if (envFile is not null)
+{
+    app.Logger.LogInformation("Read environment overrides from {EnvFile}", envFile);
+}
 
 app.UseCors("frontend");
 

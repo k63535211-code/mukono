@@ -125,6 +125,53 @@ public sealed partial class SqliteMonitoringStore
         }
     }
 
+    /// <summary>
+    /// Adds a manually tracked device. It has no agent, so <c>last_seen</c> stays null
+    /// and its status is <see cref="HealthStatus.Unknown"/> until something reports for it.
+    /// </summary>
+    public ManagedDevice CreateDevice(CreateDeviceRequest request)
+    {
+        lock (_writeGate)
+        {
+            var device = new ManagedDevice
+            {
+                Id = Guid.NewGuid(),
+                Name = request.Name!.Trim(),
+                Hostname = Pick(request.Hostname, "unknown"),
+                Address = request.Address!.Trim(),
+                Kind = request.Kind,
+                OperatingSystem = Pick(request.OperatingSystem, "Unknown"),
+                AgentVersion = string.Empty,
+                LastSeen = null,
+                Status = HealthStatus.Unknown,
+                Tags = request.Tags?.Trim() ?? string.Empty
+            };
+
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO devices
+                    (id, name, hostname, address, kind, operating_system, agent_version,
+                     last_seen, status, cpu_percent, memory_percent, disk_percent, tags)
+                VALUES
+                    ($id, $name, $hostname, $address, $kind, $operating_system, $agent_version,
+                     NULL, $status, NULL, NULL, NULL, $tags);
+                """;
+            AddText(command, "$id", device.Id.ToString());
+            AddText(command, "$name", device.Name);
+            AddText(command, "$hostname", device.Hostname);
+            AddText(command, "$address", device.Address);
+            command.Parameters.AddWithValue("$kind", (int)device.Kind);
+            AddText(command, "$operating_system", device.OperatingSystem);
+            AddText(command, "$agent_version", device.AgentVersion);
+            command.Parameters.AddWithValue("$status", (int)device.Status);
+            AddText(command, "$tags", device.Tags);
+            command.ExecuteNonQuery();
+
+            return device;
+        }
+    }
+
     public ManagedDevice? UpdateDevice(Guid id, UpdateDeviceRequest request)
     {
         lock (_writeGate)
@@ -139,13 +186,21 @@ public sealed partial class SqliteMonitoringStore
             using var command = connection.CreateCommand();
             command.CommandText = """
                 UPDATE devices
-                SET name = $name, tags = $tags, kind = $kind
+                SET name = $name,
+                    hostname = $hostname,
+                    address = $address,
+                    kind = $kind,
+                    operating_system = $operating_system,
+                    tags = $tags
                 WHERE id = $id;
                 """;
             AddGuid(command, "$id", id);
-            AddText(command, "$name", string.IsNullOrWhiteSpace(request.Name) ? existing.Name : request.Name.Trim());
-            AddText(command, "$tags", request.Tags?.Trim() ?? existing.Tags);
+            AddText(command, "$name", Pick(request.Name, existing.Name));
+            AddText(command, "$hostname", Pick(request.Hostname, existing.Hostname));
+            AddText(command, "$address", Pick(request.Address, existing.Address));
             command.Parameters.AddWithValue("$kind", (int)(request.Kind ?? existing.Kind));
+            AddText(command, "$operating_system", Pick(request.OperatingSystem, existing.OperatingSystem));
+            AddText(command, "$tags", request.Tags?.Trim() ?? existing.Tags);
             command.ExecuteNonQuery();
             return GetDevice(id);
         }
@@ -204,11 +259,15 @@ public sealed partial class SqliteMonitoringStore
 
             using var lookup = connection.CreateCommand();
             lookup.Transaction = transaction;
+            // Only devices that reported and then went quiet are stale. A manually added
+            // device has never reported (last_seen IS NULL), so Unknown stays the honest
+            // state for it rather than flipping to Offline.
             lookup.CommandText = """
                 SELECT id, name
                 FROM devices
                 WHERE status <> $offline
-                  AND (last_seen IS NULL OR last_seen < $cutoff);
+                  AND last_seen IS NOT NULL
+                  AND last_seen < $cutoff;
                 """;
             lookup.Parameters.AddWithValue("$offline", (int)HealthStatus.Offline);
             AddText(lookup, "$cutoff", cutoffText);
@@ -236,4 +295,8 @@ public sealed partial class SqliteMonitoringStore
             return stale;
         }
     }
+
+    /// <summary>Blank or whitespace input leaves the stored value untouched.</summary>
+    private static string Pick(string? requested, string current) =>
+        string.IsNullOrWhiteSpace(requested) ? current : requested.Trim();
 }

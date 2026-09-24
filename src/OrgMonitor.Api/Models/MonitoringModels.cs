@@ -14,7 +14,9 @@ public enum DeviceKind
     Controller = 9,
     Storage = 10,
     Mobile = 11,
-    LoadBalancer = 12
+    LoadBalancer = 12,
+    Laptop = 13,
+    Desktop = 14
 }
 
 public enum HealthStatus
@@ -120,8 +122,22 @@ public sealed class UpdateNetworkTargetRequest
 public sealed class UpdateDeviceRequest
 {
     public string? Name { get; init; }
-    public string? Tags { get; init; }
+    public string? Hostname { get; init; }
+    public string? Address { get; init; }
     public DeviceKind? Kind { get; init; }
+    public string? OperatingSystem { get; init; }
+    public string? Tags { get; init; }
+}
+
+/// <summary>Manually tracked device: no agent reports for it, so it has no live metrics.</summary>
+public sealed class CreateDeviceRequest
+{
+    public string? Name { get; init; }
+    public string? Hostname { get; init; }
+    public string? Address { get; init; }
+    public DeviceKind Kind { get; init; } = DeviceKind.Workstation;
+    public string? OperatingSystem { get; init; }
+    public string? Tags { get; init; }
 }
 
 public sealed class DeviceMetricPoint

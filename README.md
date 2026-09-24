@@ -40,6 +40,36 @@ dotnet build OrgMonitor.sln
 cd web && npm run build
 ```
 
+## Configuration and secrets
+
+Secrets live in a `.env` file at the repository root. It is gitignored; `.env.example` is the committed template:
+
+```bash
+cp .env.example .env
+chmod 600 .env
+```
+
+The API loads `.env` at startup (`src/OrgMonitor.Api/Configuration/DotEnv.cs`), and `npm run dev` reads the same file for the development-only Vite proxy — so one file holds every secret for local work. Keys use ASP.NET's environment-variable form, where `__` nests one level, so `Monitoring__AdminApiKey` sets `Monitoring:AdminApiKey`.
+
+Rules the loader follows:
+
+- A variable already exported in the shell **always wins** over `.env`, so production can keep using systemd, Docker, or key-vault secrets unchanged.
+- `#` starts a comment only at the beginning of a line, so generated secrets may contain `#`.
+- Values may be single- or double-quoted; quotes are stripped.
+- The file is searched upward from the working directory and from the assembly location, so it is found whether you run `dotnet run` from the repository root or execute the built binary.
+
+| Key | Purpose |
+| --- | --- |
+| `Monitoring__AdminApiKey` | Required outside Development; `X-Admin-Key` for management routes |
+| `Monitoring__AgentApiKey` | `X-Agent-Key` for agent heartbeats |
+| `Auth__BootstrapPassword` | Password for the initial `admin` account, used only while no users exist |
+| `Auth__PublicBaseUrl` | Absolute base URL used to build password-reset links |
+| `Smtp__Host`, `Smtp__Username`, `Smtp__Password`, `Smtp__From`, … | SMTP delivery for resets and notifications |
+| `Database__Path`, `Database__SeedDemoData` | Storage location and demo-row seeding |
+| `ORGADMIN_API_KEY` | Read only by `npm run dev`; sent as `X-Admin-Key` by the proxy, never bundled into the browser |
+
+Agents on other machines do not read this file: they take `ORGMONITOR_API_KEY` from their own environment.
+
 ## Run locally
 
 Start the API:
@@ -56,24 +86,18 @@ npm install
 npm run dev
 ```
 
-If the API has `Monitoring:AdminApiKey` configured, inject the same key into the **development-only Vite proxy** (the key stays server-side and is not bundled into the browser):
-
-```bash
-ORGADMIN_API_KEY='replace-with-a-different-long-random-secret' npm run dev
-```
+If the API has `Monitoring:AdminApiKey` configured, put the same value in `.env` as `ORGADMIN_API_KEY` so the **development-only Vite proxy** can send it (the key stays server-side and is not bundled into the browser).
 
 Open <http://127.0.0.1:5173>. The Vite proxy sends `/api` and `/health` requests to `http://localhost:5080`.
 
-The default database is `orgmonitor.db` in the process working directory. To use a different location, set `Database__Path` before starting the API:
+The default database is `orgmonitor.db` in the process working directory. Set `Database__Path` in `.env` to move it:
 
 ```bash
-Database__Path=/var/lib/orgmonitor/orgmonitor.db \
-Monitoring__AgentApiKey='replace-with-a-long-random-secret' \
-Monitoring__AdminApiKey='replace-with-a-different-long-random-secret' \
-dotnet run --project src/OrgMonitor.Api
+Database__Path=/var/lib/orgmonitor/orgmonitor.db
+Database__SeedDemoData=false
 ```
 
-The schema is created automatically on first start. Set `Database__SeedDemoData=false` for an empty deployment.
+The schema is created automatically on first start.
 
 ## Agent heartbeat
 
@@ -122,6 +146,9 @@ curl -H 'X-Admin-Key: replace-with-a-different-long-random-secret' http://localh
 - `GET /health` — service and storage health
 - `GET /api/overview` — dashboard counters
 - `GET /api/devices` — managed-device inventory
+- `POST /api/devices` — add a manually tracked device (no agent required)
+- `PUT /api/devices/{id}` — edit a device's name, hostname, address, type, OS, and tags
+- `DELETE /api/devices/{id}` — remove a device from the inventory
 - `POST /api/agents/heartbeat` — enroll or update an agent
 - `GET /api/network` — configured network targets and probe status
 - `POST /api/network/targets` — add an authorized target
